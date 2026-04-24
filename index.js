@@ -12,6 +12,7 @@ const dataset = gdal.open(VRT_PATH);
 const transform = dataset.geoTransform;
 const band = dataset.bands.get(1);
 
+// http://localhost:3000/elevation?lat=27.9881&lon=86.9250
 app.get("/elevation", (req, res) => {
     const latStr = req.query.lat;
     const lonStr = req.query.lon;
