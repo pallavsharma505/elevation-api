@@ -1,0 +1,20 @@
+{
+  "name": "elevationdata",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node --watch index.js",
+    "start": "node index.js",
+    "setup": "npm install && node GetData.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1036.0",
+    "express": "^5.2.1",
+    "gdal-async": "^3.12.3"
+  }
+}
