@@ -17,6 +17,8 @@ app.get("/elevation", (req, res) => {
     const latStr = req.query.lat;
     const lonStr = req.query.lon;
 
+    console.log(`Received request for elevation at lat=${latStr}, lon=${lonStr}`);
+
     // 1. Validate inputs
     if (!latStr || !lonStr) {
         return res.status(400).json({ error: "Missing lat or lon parameters" });

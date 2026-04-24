@@ -9,23 +9,25 @@ const { pipeline } = require("stream/promises");
 
 // Configuration
 const BUCKET_NAME = "raster";
-const PREFIX = "COP90/";
 const DOWNLOAD_DIR = path.join(__dirname, "data");
+
+// Targets to download (The VRT file, and the folder containing the TIFFs)
+const TARGETS = [
+    { type: "file", key: "COP90_hh.vrt" },
+    { type: "folder", prefix: "COP90/" },
+];
 
 // Configure S3 Client for OpenTopography's custom, public S3 endpoint
 const s3Client = new S3Client({
     endpoint: "https://opentopography.s3.sdsc.edu",
-    region: "us-east-1", // Region is required by SDK but ignored by custom endpoints
-    forcePathStyle: true, // Crucial for non-AWS S3 endpoints
+    region: "us-east-1",
+    forcePathStyle: true,
     credentials: {
-        accessKeyId: "anonymous", // Dummy credentials for anonymous access
-        secretAccessKey: "anonymous", // Dummy credentials
+        accessKeyId: "anonymous",
+        secretAccessKey: "anonymous",
     },
 });
 
-/**
- * Helper function to ensure local directories exist
- */
 function ensureDirectoryExists(filePath) {
     const dir = path.dirname(filePath);
     if (!fs.existsSync(dir)) {
@@ -33,76 +35,85 @@ function ensureDirectoryExists(filePath) {
     }
 }
 
-/**
- * Main Download Function
- */
-async function downloadData() {
+async function downloadSingleFile(key, size) {
+    const localFilePath = path.join(DOWNLOAD_DIR, key);
+    ensureDirectoryExists(localFilePath);
+
+    if (fs.existsSync(localFilePath) && size) {
+        const stats = fs.statSync(localFilePath);
+        if (stats.size === size) {
+            console.log(`Skipping (already exists): ${key}`);
+            return;
+        }
+    }
+
     console.log(
-        `Starting sync from s3://${BUCKET_NAME}/${PREFIX} to ${DOWNLOAD_DIR}...`,
+        `Downloading: ${key} ${size ? `(${(size / 1024 / 1024).toFixed(2)} MB)` : ""}`,
     );
 
-    let isTruncated = true;
-    let continuationToken = undefined;
+    const getCommand = new GetObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: key,
+    });
+
+    const { Body } = await s3Client.send(getCommand);
+    await pipeline(Body, fs.createWriteStream(localFilePath));
+}
+
+async function downloadData() {
+    console.log(
+        `Starting sync from s3://${BUCKET_NAME}/ to ${DOWNLOAD_DIR}...`,
+    );
     let totalFiles = 0;
 
-    // 1. Paginate through the bucket (S3 returns max 1000 items per request)
-    while (isTruncated) {
-        const listCommand = new ListObjectsV2Command({
-            Bucket: BUCKET_NAME,
-            Prefix: PREFIX,
-            ContinuationToken: continuationToken,
-        });
-
-        try {
-            const listResponse = await s3Client.send(listCommand);
-            const objects = listResponse.Contents || [];
-
-            // 2. Download each file in the current batch
-            for (const obj of objects) {
-                // Skip directories (S3 objects ending with '/')
-                if (obj.Key.endsWith("/")) continue;
-
-                const localFilePath = path.join(DOWNLOAD_DIR, obj.Key);
-                ensureDirectoryExists(localFilePath);
-
-                // Check if file already exists and matches the size (Basic resume capability)
-                if (fs.existsSync(localFilePath)) {
-                    const stats = fs.statSync(localFilePath);
-                    if (stats.size === obj.Size) {
-                        console.log(`Skipping (already exists): ${obj.Key}`);
-                        totalFiles++;
-                        continue;
-                    }
-                }
-
-                console.log(
-                    `Downloading: ${obj.Key} (${(obj.Size / 1024 / 1024).toFixed(2)} MB)`,
+    for (const target of TARGETS) {
+        if (target.type === "file") {
+            // Fetch the standalone file (like the .vrt)
+            try {
+                await downloadSingleFile(target.key, null);
+                totalFiles++;
+            } catch (err) {
+                console.error(
+                    `Failed to download file ${target.key}:`,
+                    err.message,
                 );
+            }
+        } else if (target.type === "folder") {
+            // Paginate and fetch the directory
+            let isTruncated = true;
+            let continuationToken = undefined;
 
-                // Fetch the file stream
-                const getCommand = new GetObjectCommand({
+            while (isTruncated) {
+                const listCommand = new ListObjectsV2Command({
                     Bucket: BUCKET_NAME,
-                    Key: obj.Key,
+                    Prefix: target.prefix,
+                    ContinuationToken: continuationToken,
                 });
 
-                const { Body } = await s3Client.send(getCommand);
+                try {
+                    const listResponse = await s3Client.send(listCommand);
+                    const objects = listResponse.Contents || [];
 
-                // Pipe the S3 stream directly to the local file system safely
-                await pipeline(Body, fs.createWriteStream(localFilePath));
-                totalFiles++;
+                    for (const obj of objects) {
+                        if (obj.Key.endsWith("/")) continue; // Skip directories
+                        await downloadSingleFile(obj.Key, obj.Size);
+                        totalFiles++;
+                    }
+
+                    isTruncated = listResponse.IsTruncated;
+                    continuationToken = listResponse.NextContinuationToken;
+                } catch (err) {
+                    console.error(
+                        `Error interacting with S3 for prefix ${target.prefix}:`,
+                        err,
+                    );
+                    process.exit(1);
+                }
             }
-
-            // Update pagination tokens
-            isTruncated = listResponse.IsTruncated;
-            continuationToken = listResponse.NextContinuationToken;
-        } catch (err) {
-            console.error("Error interacting with S3:", err);
-            process.exit(1);
         }
     }
 
     console.log(`\n✅ Download complete! Processed ${totalFiles} files.`);
 }
 
-// Execute the script
 downloadData();

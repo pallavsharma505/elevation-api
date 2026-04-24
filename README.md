@@ -10,7 +10,8 @@ This project downloads and utilizes the **Copernicus 90m Global DEM (COP90)** da
 
 * **Completely Offline/Self-Hosted:** Queries local `.tif` data. No external API calls.
 * **Fast:** Uses memory-mapped `.vrt` (Virtual Raster) files to instantly query the exact pixel.
-* **Resumable Downloads:** Built-in S3 script securely and safely downloads the ~30GB dataset, skipping already downloaded files.
+* **Resumable Downloads:** Built-in S3 script securely and safely downloads the ~30GB dataset and its mapping files, skipping anything already downloaded.
+* **No External Dependencies:** Because the VRT file is pre-built and fetched automatically, there is no need to install GDAL system binaries on your machine.
 
 ---
 
@@ -18,36 +19,20 @@ This project downloads and utilizes the **Copernicus 90m Global DEM (COP90)** da
 
 1. **Node.js:** v18 or higher recommended.
 2. **Disk Space:** At least **35GB** of free disk space to store the global GeoTIFF dataset.
-3. **GDAL CLI Tools:** While the app runs on `gdal-async`, you will need the system GDAL tools installed just *once* to stitch the downloaded `.tif` files into a `.vrt` file.
-   * **Ubuntu/Debian:** `sudo apt-get install gdal-bin`
-   * **macOS:** `brew install gdal`
-   * **Windows:** Install via OSGeo4W.
 
 ---
 
 ## 🛠️ Installation & Setup
 
-### 1. Install Dependencies & Download Data
+### Install Dependencies & Download Data
 
-Run the built-in setup script. This will install the necessary npm packages and immediately begin downloading the COP90 dataset from OpenTopography's AWS S3 bucket.
+Run the built-in setup script. This will install the necessary npm packages and immediately begin downloading the COP90 dataset (including the `.vrt` map file and all `.tif` files) from OpenTopography's AWS S3 bucket.
 
 ```bash
 npm run setup
 ```
 
-*Note: This downloads tens of gigabytes of `.tif` files into the `./data/COP90/` directory. Depending on your internet connection, this may take a while. If the process is interrupted, simply run `node GetData.js` again to resume.*
-
-### 2. Generate the Virtual Raster (VRT)
-
-Once all the `.tif` files have finished downloading, you need to combine them into a single virtual file so the API can read them globally. 
-
-Run the following command from the root of your project:
-
-```bash
-gdalbuildvrt ./data/COP90_hh.vrt ./data/COP90/*.tif
-```
-
-This creates a lightweight XML file (`COP90_hh.vrt`) in the `./data` folder that maps out all the TIFF files.
+*Note: This downloads tens of gigabytes of data into the `./data/` directory. Depending on your internet connection, this may take a while. If the process is interrupted, simply run `node GetData.js` again to resume right where it left off.*
 
 ---
 
@@ -120,7 +105,7 @@ curl "http://localhost:3000/elevation?lat=27.9881&lon=86.9250"
 ```text
 ├── data/                  # Directory containing the downloaded GIS data
 │   ├── COP90/             # Contains the individual .tif files
-│   └── COP90_hh.vrt       # The generated Virtual Raster map (created manually)
+│   └── COP90_hh.vrt       # The pre-built Virtual Raster map (downloaded via S3)
 ├── index.js               # Main Express server and GDAL querying logic
 ├── GetData.js             # AWS S3 download script for OpenTopography data
 ├── package.json           # Project dependencies and scripts
