@@ -5,8 +5,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "node --watch index.js",
-    "start": "node index.js",
-    "setup": "npm install && node GetData.js"
+    "start": "node index.js"
   },
   "keywords": [],
   "author": "",

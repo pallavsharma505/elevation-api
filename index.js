@@ -4,22 +4,26 @@ const gdal = require("gdal-async");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const VRT_PATH = "./data/COP90_hh.vrt";
+// Tell GDAL to stream directly from the public S3 endpoint via HTTP
+const VRT_PATH =
+    "/vsicurl/https://opentopography.s3.sdsc.edu/raster/COP30/COP30_hh.vrt";
 
-// Open the VRT dataset once when the server starts.
-// This keeps the metadata in memory so subsequent requests are fast.
+console.log(
+    "Opening remote dataset... (this may take a few seconds on startup)",
+);
+
+// Open the remote VRT dataset.
+// GDAL will fetch the XML headers over the network.
 const dataset = gdal.open(VRT_PATH);
 const transform = dataset.geoTransform;
 const band = dataset.bands.get(1);
 
-// http://localhost:3000/elevation?lat=27.9881&lon=86.9250
+console.log("Dataset ready!");
+
 app.get("/elevation", (req, res) => {
     const latStr = req.query.lat;
     const lonStr = req.query.lon;
 
-    console.log(`Received request for elevation at lat=${latStr}, lon=${lonStr}`);
-
-    // 1. Validate inputs
     if (!latStr || !lonStr) {
         return res.status(400).json({ error: "Missing lat or lon parameters" });
     }
@@ -32,12 +36,9 @@ app.get("/elevation", (req, res) => {
     }
 
     try {
-        // 2. Convert Lat/Lon to Pixel Coordinates (Column and Row)
-        // Formula: Pixel = (Coordinate - TopLeftCoordinate) / PixelResolution
         const col = Math.floor((lon - transform[0]) / transform[1]);
         const row = Math.floor((lat - transform[3]) / transform[5]);
 
-        // 3. Prevent errors by checking if the coordinate is outside the map boundaries
         if (
             col < 0 ||
             col >= dataset.rasterSize.x ||
@@ -51,15 +52,14 @@ app.get("/elevation", (req, res) => {
                 });
         }
 
-        // 4. Extract the exact elevation pixel
+        // When this runs, GDAL makes a tiny HTTP Range Request to the specific
+        // .tif file on OpenTopography's server to grab just this one pixel.
         let elevation = band.pixels.get(col, row);
 
-        // 5. Handle missing data / oceans (often stored as -32768 or similar)
         if (elevation !== null && elevation < -10000) {
             elevation = 0.0;
         }
 
-        // 6. Return the JSON response
         return res.json({
             latitude: lat,
             longitude: lon,
@@ -73,7 +73,6 @@ app.get("/elevation", (req, res) => {
     }
 });
 
-// Start the server
 app.listen(PORT, () => {
     console.log(`Global Elevation API running on http://localhost:${PORT}`);
 });
