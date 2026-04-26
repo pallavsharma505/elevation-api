@@ -99,12 +99,64 @@ curl "http://localhost:3000/elevation?lat=27.9881&lon=86.9250"
 
 ```text
 ├── data/                    # Auto-created on first run
-│   ├── COP30_hh/            # Downloaded tile .tif files (on-demand)
+│   ├── COP30_hh/            # Downloaded tile .tif files (on-demand or pre-cached)
 │   └── COP30_hh.vrt         # VRT index file (downloaded on startup)
 ├── index.js                 # Main Express server, tile caching, and GDAL logic
+├── PreCache.js              # Optional script to bulk pre-download tiles for a region
 ├── package.json             # Project dependencies and scripts
 └── README.md                # Project documentation
 ```
+
+---
+
+## 🗺️ Pre-Caching a Region
+
+By default, tiles are downloaded on-demand the first time a coordinate in that region is queried. If you know in advance which geographic area you'll be serving, you can bulk pre-download all tiles for that region using the `PreCache.js` script.
+
+### Configuration
+
+Open `PreCache.js` and set the four bounding-box variables at the top of the file:
+
+```js
+const startLat = 49.97;   // Northern boundary
+const startLon = -130.527; // Western boundary (negative = west)
+const endLat   = 24.87;   // Southern boundary
+const endLon   = -73.92;  // Eastern boundary
+```
+
+> **Longitude convention:** Both negative (`-130.5`) and 0–360 (`229.5`) formats are accepted — the script normalises them automatically.
+
+Order doesn't matter — `startLat` can be north or south of `endLat`.
+
+### Running the script
+
+```bash
+node PreCache.js
+```
+
+The script will:
+
+1. Download and cache `COP30_hh.vrt` if not already present
+2. Enumerate every 1°×1° tile whose SW corner falls inside the bounding box
+3. Skip tiles already on disk
+4. Download missing tiles one at a time, showing live download speed
+5. Print a summary on completion:
+
+```
+─────────────────────────────────────────────
+  Summary
+─────────────────────────────────────────────
+  Total tiles      : 1456
+  Downloaded       : 1421
+  Already cached   : 30
+  Missing / failed : 5
+─────────────────────────────────────────────
+  Total time       : 6h 12m 3.4s
+  Avg per tile     : 15.74s
+─────────────────────────────────────────────
+```
+
+> **Disk space:** Each tile is roughly 20–60 MB. The contiguous USA (~1 400 tiles) requires approximately **40–60 GB** of free disk space.
 
 ---
 
