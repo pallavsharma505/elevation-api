@@ -1,46 +1,41 @@
 # Global Elevation API
 
-A lightweight, fast, and self-hosted Node.js API that returns the elevation (height in meters) for any latitude and longitude coordinate on Earth. 
+A lightweight, fast, and self-hosted Node.js API that returns the elevation (height in meters) for any latitude and longitude coordinate on Earth.
 
-This project downloads and utilizes the **Copernicus 90m Global DEM (COP90)** dataset from OpenTopography. By hosting the data locally and using `gdal-async`, the API serves elevation queries in milliseconds without rate limits.
+This project uses the **Copernicus 30m Global DEM (COP30)** dataset from OpenTopography. Tile files are downloaded on-demand and cached locally, so the API requires zero upfront setup and only stores the data you actually query.
 
 ---
 
 ## 🚀 Features
 
-* **Completely Offline/Self-Hosted:** Queries local `.tif` data. No external API calls.
-* **Fast:** Uses memory-mapped `.vrt` (Virtual Raster) files to instantly query the exact pixel.
-* **Resumable Downloads:** Built-in S3 script securely and safely downloads the ~30GB dataset and its mapping files, skipping anything already downloaded.
-* **No External Dependencies:** Because the VRT file is pre-built and fetched automatically, there is no need to install GDAL system binaries on your machine.
+* **Zero Setup:** No bulk download required. Just install dependencies and start the server.
+* **On-Demand Tile Caching:** Individual GeoTIFF tiles (~30MB each) are fetched from OpenTopography's public S3 bucket the first time a coordinate in that tile is queried, then stored in `./data/COP30_hh/` for all future requests.
+* **LRU Memory Management:** Up to `MAX_TILES` (default: 10) tile datasets are kept open in memory simultaneously. Least-recently-used tiles are automatically closed to free RAM when the limit is exceeded.
+* **No External Binaries:** No need to install GDAL system tools — `gdal-async` bundles its own binaries.
 
 ---
 
 ## 📋 Prerequisites
 
 1. **Node.js:** v18 or higher recommended.
-2. **Disk Space:** At least **35GB** of free disk space to store the global GeoTIFF dataset.
+2. **Disk Space:** Tiles are downloaded on demand (~30MB per 1°×1° tile). Storage grows only as you query new regions.
+3. **Internet Access:** Required the first time a new tile or the VRT index is requested. Subsequent queries for the same region are fully local.
 
 ---
 
 ## 🛠️ Installation & Setup
 
-### Install Dependencies & Download Data
-
-Run the built-in setup script. This will install the necessary npm packages and immediately begin downloading the COP90 dataset (including the `.vrt` map file and all `.tif` files) from OpenTopography's AWS S3 bucket.
-
 ```bash
-npm run setup
+npm install
 ```
 
-*Note: This downloads tens of gigabytes of data into the `./data/` directory. Depending on your internet connection, this may take a while. If the process is interrupted, simply run `node GetData.js` again to resume right where it left off.*
+That's it. On first start, the server downloads the VRT index file (`COP30_hh.vrt`) automatically. Individual tiles download in the background the first time each region is queried.
 
 ---
 
 ## 💻 Usage
 
-Start the Express server. You can use the development command (which auto-restarts on file changes) or the standard start command.
-
-**Development mode:**
+**Development mode** (auto-restarts on file changes):
 
 ```bash
 npm run dev
@@ -103,18 +98,18 @@ curl "http://localhost:3000/elevation?lat=27.9881&lon=86.9250"
 ## 📂 Project Structure
 
 ```text
-├── data/                  # Directory containing the downloaded GIS data
-│   ├── COP90/             # Contains the individual .tif files
-│   └── COP90_hh.vrt       # The pre-built Virtual Raster map (downloaded via S3)
-├── index.js               # Main Express server and GDAL querying logic
-├── GetData.js             # AWS S3 download script for OpenTopography data
-├── package.json           # Project dependencies and scripts
-└── README.md              # Project documentation
+├── data/                    # Auto-created on first run
+│   ├── COP30_hh/            # Downloaded tile .tif files (on-demand)
+│   └── COP30_hh.vrt         # VRT index file (downloaded on startup)
+├── index.js                 # Main Express server, tile caching, and GDAL logic
+├── package.json             # Project dependencies and scripts
+└── README.md                # Project documentation
 ```
 
 ---
 
 ## ⚠️ Notes
 
-* **Ocean/NoData Values:** GeoTIFFs often represent oceans or missing data with massive negative numbers (like `-32768`). The API automatically catches values below `-10000` and normalizes them to `0.0`.
-* **RAM Usage:** Because the API relies on a `.vrt` file rather than loading the entire 30GB dataset into memory, RAM usage remains very low (typically under 100MB).
+* **Ocean/NoData Values:** GeoTIFFs represent oceans or missing data with large negative numbers (like `-32768`). The API automatically normalizes values below `-10000` to `0.0`.
+* **RAM Usage:** Only up to `MAX_TILES` (default: `10`) tile datasets are held open at once. Adjust the `MAX_TILES` constant in `index.js` to trade RAM for fewer re-opens of frequently accessed tiles.
+* **First-Request Latency:** The first query into a new 1°×1° tile region incurs a one-time download (~30MB). All subsequent queries to that region are served from disk with no network I/O.
